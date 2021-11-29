@@ -44,8 +44,6 @@ export class FileLogger implements Logger {
 
     constructor(filePath: string) {
         this.filePath = filePath
-        if (process.platform === 'win32')
-            this.filePath = filePath.replaceAll(':', '.')
     }
 
     debug(msg: string): void {

@@ -39,7 +39,9 @@ let wallet: Wallet
 let logger: Logger
 
 function runChecksAndInit() {
-    var logFilepath = path.join(__dirname, `log_${new Date().toISOString()}.txt`)
+    var logFileName = process.platform == "win32" ? `log_${new Date().toISOString()}.txt`.replaceAll(':', '.') : `log_${new Date().toISOString()}.txt`
+    var logFilepath = path.join(__dirname, "../", "logs", logFileName)
+
     logger = new MultiLogger([new ConsoleLogger(), new FileLogger(logFilepath)])
 
     if (FLASBHOTS_PRIVATE_KEY == undefined) {
