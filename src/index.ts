@@ -4,7 +4,10 @@ import { FlashbotsBundleProvider, FlashbotsBundleRawTransaction, FlashbotsBundle
 import axios from 'axios';
 import dotenv from 'dotenv';
 import { BigNumber, providers, Wallet } from 'ethers';
+import path from 'path';
 import { exit } from 'process';
+import { ConsoleLogger, FileLogger, Logger, MultiLogger } from './Logger';
+import { padLeft } from './utils';
 
 const GWEI = BigNumber.from(10).pow(9)
 const ETH = BigNumber.from(10).pow(18)
@@ -12,7 +15,7 @@ const ETH = BigNumber.from(10).pow(18)
 dotenv.config()
 const IS_PROD = process.env.IS_PROD ? process.env.IS_PROD === "true" : false
 const NFT_PRICE_ETH = process.env.NFT_PRICE_ETH ? ETH.mul(Number(process.env.NFT_PRICE_ETH) * 10000).div(10000) : BigNumber.from(0)
-const NFT_PIECES = Number(process.env.NFT_PIECES) // Total:per-mint OR Total (automatically 1 per mint)
+const NFT_PIECES = Number(process.env.NFT_PIECES)
 const NFT_PIECES_PER_MINT = Number(process.env.NFT_PIECES_PER_MINT)
 const MINER_BRIBE_GWEI = process.env.MINER_BRIBER_GWEI
     ? GWEI.mul(BigNumber.from(process.env.MINER_BRIBE_GWEI))
@@ -33,26 +36,29 @@ const WALLET_PRIVATE_KEY = process.env.WALLET_PRIVATE_KEY
 
 let authSigner: Wallet
 let wallet: Wallet
+let logger: Logger
 
 function runChecksAndInit() {
+    var logFilepath = path.join(__dirname, `log_${new Date().toISOString()}.txt`)
+    logger = new MultiLogger([new ConsoleLogger(), new FileLogger(logFilepath)])
 
     if (FLASBHOTS_PRIVATE_KEY == undefined) {
-        console.error("Flasbhots key undefined. Exiting")
+        logger.error("Flasbhots key undefined. Exiting")
         process.exit(1)
     }
 
     if (ETHERSCAN_TOKEN == undefined) {
-        console.error("Etherscan token undefined. Exiting")
+        logger.error("Etherscan token undefined. Exiting")
         process.exit(1)
     }
 
     if (WALLET_PRIVATE_KEY == undefined) {
-        console.error("Private key wallet undefined. Exiting.")
+        logger.error("Private key wallet undefined. Exiting.")
         process.exit(1)
     }
 
     if (process.env.NFT_ADDRESS == undefined) {
-        console.error("NFT Contract undefined. Exiting.")
+        logger.error("NFT Contract undefined. Exiting.")
         process.exit(1)
     }
 
@@ -87,10 +93,7 @@ async function getNFTMintData(nftAdress: string | undefined): Promise<string> {
                     if (!element["inputs"].hasOwnProperty(1) && element["inputs"][0]["type"].includes('int')) {
                         // We get number of bit and divide by four to get the hex string that needs to be sent
                         const hexDigits: number = element["inputs"][0]["type"].replace('uint', '').replace('int', '') / 4
-                        let hexData: string = NFT_PIECES.toString()
-                        while (hexData.length < hexDigits) {
-                            hexData = '0' + hexData
-                        }
+                        let hexData: string = padLeft(NFT_PIECES.toString(), hexDigits)
                         return functionData + hexData
                     }
                     else
@@ -102,9 +105,9 @@ async function getNFTMintData(nftAdress: string | undefined): Promise<string> {
             }
         }
     } catch (exception) {
-        console.log(exception)
+        logger.error(JSON.stringify(exception))
     }
-    console.log("Could not find mint function.")
+    logger.info("Could not find mint function.")
     return ""
 }
 
@@ -132,43 +135,41 @@ async function main() {
     const signedBundle = await flashbotsProvider.signBundle(bundledTransaction)
     const simulation = await flashbotsProvider.simulate(signedBundle, blockNumber + BLOCKS_IN_FUTURE)
     if ('error' in simulation) {
-        console.warn(`Simulation Error: ${simulation.error.message}`)
+        logger.error(`Simulation Error: ${simulation.error.message}`)
         process.exit(1)
     } else {
-        console.log(`Simulation Success: ${JSON.stringify(simulation, null, 2)}`)
+        logger.debug(`Simulation Success: ${JSON.stringify(simulation, null, 2)}`)
     }
 
     const balanceBefore = await wallet.getBalance()
     for (let block = 1; block < blockNumber + BLOCKS_IN_FUTURE; block++) {
         let targetBlock = block + blockNumber
-        console.log("Sending transaction for block " + targetBlock)
+        logger.info("Sending transaction for block " + targetBlock)
         const bundleSubmission = await flashbotsProvider.sendBundle(bundledTransaction, targetBlock)
         if ('error' in bundleSubmission) {
-            console.warn(bundleSubmission.error.message)
+            logger.error(bundleSubmission.error.message)
             throw new Error(bundleSubmission.error.message);
         }
 
         const waitResponse = await bundleSubmission.wait()
-        console.log(`Wait Response: ${FlashbotsBundleResolution[waitResponse]}`)
+        logger.debug(`Wait Response: ${FlashbotsBundleResolution[waitResponse]}`)
 
         if (waitResponse === FlashbotsBundleResolution.BundleIncluded) {
-            console.log("Bundle included in block " + targetBlock)
+            logger.info("Bundle included in block " + targetBlock)
             process.exit(0)
         }
         else if (waitResponse === FlashbotsBundleResolution.AccountNonceTooHigh) {
-            console.log("Account nonce too high.")
+            logger.error("Account nonce too high.")
             process.exit(1)
         }
         else {
             if (IS_PROD) {
-                console.log({
-                    bundleStats: await flashbotsProvider.getBundleStats(simulation.bundleHash, targetBlock),
-                    userStats: await flashbotsProvider.getUserStats()
-                })
+                // TODO - Need to somehow log this in logger
+                logger.info(JSON.stringify(await flashbotsProvider.getBundleStats(simulation.bundleHash, targetBlock)))
+                logger.info(JSON.stringify(await flashbotsProvider.getUserStats()))
             }
         }
     }
-    console.log('Balance lost in ether = ' + balanceBefore.sub(await wallet.getBalance()).div(ETH).toString())
     exit(1)
 }
 
