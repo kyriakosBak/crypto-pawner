@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import { BigNumber, providers, Wallet } from 'ethers';
 import path from 'path';
 import { exit } from 'process';
-import { ConsoleLogger, FileLogger, Logger, MultiLogger } from './Logger';
+import { ConsoleLogger, FileLogger, Logger, MultiLogger } from './logger';
 import { padLeft } from './utils';
 
 const GWEI = BigNumber.from(10).pow(9)
