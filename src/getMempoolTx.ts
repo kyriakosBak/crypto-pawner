@@ -1,5 +1,5 @@
-var Web3 = require('web3')
-var url = "http://localhost:8545"
+import Web3 from 'web3'
+var url = "ws://localhost:8545"
 
 var options = {
     timeout: 30000,
@@ -15,8 +15,7 @@ var options = {
     },
 };
 
-
-var web3 = new Web3(new Web3.default.providers.WebsocketProvider(url, options))
+const web3 = new Web3(url)
 const subscription = web3.eth.subscribe("pendingTransactions", (err: any, res: any) => {
     if (err) console.error(err);
 });
