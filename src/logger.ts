@@ -2,9 +2,11 @@ import { padLeft } from "./utils";
 import * as fs from "fs";
 
 export interface Logger {
+    raw(msg: string): void
     debug(msg: string): void;
     info(msg: string): void;
     error(msg: string): void;
+    raw(msg: string): void
 
 }
 enum LogLevel {
@@ -23,6 +25,9 @@ function getLogLine(msg: string, logLevel: LogLevel) {
 }
 
 export class ConsoleLogger implements Logger {
+    raw(msg: string): void {
+        console.log(msg)
+    }
     private logLevel: LogLevel = LogLevel.DEBUG
     debug(msg: string): void {
         if (this.logLevel <= LogLevel.DEBUG)
@@ -44,6 +49,9 @@ export class FileLogger implements Logger {
 
     constructor(filePath: string) {
         this.filePath = filePath
+    }
+    raw(msg: any): void {
+        this.writeToFile(msg)
     }
 
     debug(msg: string): void {
@@ -69,6 +77,11 @@ export class MultiLogger implements Logger {
     logLevel: LogLevel = LogLevel.DEBUG
     constructor(multipleLoggers: Logger[]) {
         this.loggers = multipleLoggers
+    }
+    raw(msg: any): void {
+        for (const logger of this.loggers) {
+            logger.raw(msg)
+        }
     }
 
     debug(msg: string): void {
