@@ -1,6 +1,10 @@
 import { Interface } from "@ethersproject/abi";
 import axios from "axios";
-import { error } from "console";
+import * as fs from "fs"
+import path from "path";
+import dotenv from 'dotenv';
+import * as env from 'env-var'
+dotenv.config()
 
 export const ETH = 10n ** 18n
 export const GWEI = 10n ** 9n
@@ -48,4 +52,19 @@ export function getFunctionABIByName(jsonAbi: any, functionName: string, isPayab
         }
     }
     return ""
+}
+
+export async function getInterface(abiFileNameOrAddress:string): Promise<Interface> {
+    let jsonAbi: string
+    // If address
+    if (abiFileNameOrAddress.startsWith('0x')){
+        const endPoint = env.get('ETHERSCAN_ENDPOINT').required().asString()
+        const token = env.get('ETHERSCAN_TOKEN').required().asString()
+        jsonAbi = await getContractABIJson(endPoint, abiFileNameOrAddress, token)
+    }
+    else{
+        const jsonAbiPath = path.join(__dirname, "../", "contracts", "abis", abiFileNameOrAddress)
+        jsonAbi = JSON.parse(fs.readFileSync(jsonAbiPath).toString())
+    }
+    return new Interface(jsonAbi)
 }

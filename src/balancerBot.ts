@@ -8,12 +8,10 @@ import { getContractABIJson, getFunctionABIByName, ETH, GWEI } from './utils'
 import * as fs from "fs"
 import { Interface } from '@ethersproject/abi'
 import { InfuraProvider, InfuraWebSocketProvider, WebSocketProvider } from '@ethersproject/providers'
-import { ApolloClient, InMemoryCache } from '@apollo/client';
 import Web3 from 'web3'
 import * as env from 'env-var'
 import { EnvVarError } from 'env-var'
 import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle'
-import { sendFlasbhotTransaction } from './flasbhotSender';
 const Tx = require('ethereumjs-tx').Transaction;
 
 dotenv.config()
