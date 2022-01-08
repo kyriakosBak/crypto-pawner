@@ -1,48 +1,29 @@
 import { TransactionRequest } from '@ethersproject/providers';
-import { FlashbotsBundleProvider, FlashbotsBundleRawTransaction, FlashbotsBundleResolution, FlashbotsBundleTransaction } from '@flashbots/ethers-provider-bundle';
+import { FlashbotsBundleProvider, FlashbotsBundleRawTransaction, FlashbotsBundleTransaction } from '@flashbots/ethers-provider-bundle';
 import dotenv from 'dotenv';
 import * as env from 'env-var'
 import { BigNumber, providers, Wallet } from 'ethers';
 import { solidityKeccak256 } from 'ethers/lib/utils';
-import path from 'path';
 import { ConsoleLogger, FileLogger, Logger, MultiLogger } from './logger';
-import { getInterface } from './utils';
+import { getInterface, getLogFilePath } from './utils';
 import Web3 from 'web3';
 import { sendFlasbhotTransaction } from './flasbhotSender';
 
 dotenv.config()
+
 const NFT_PRICE_ETH = env.get('NFT_PRICE_ETH').required().asFloat()
 const NFT_PIECES_TOTAL = env.get('NFT_PIECES_TOTAL').required().asInt()
 const NFT_PIECES_PER_MINT = env.get('NFT_PIECES_PER_MINT').required().asInt()
 const MINER_BRIBE_GWEI = env.get('MINER_BRIBE_GWEI').default(2.000000001).asFloat()
-
 const NFT_ADDRESS = env.get('NFT_ADDRESS').required().asString()
 const MINT_DATA = env.get('MINT_DATA').asString()
-const ETHERSCAN_ENDPOINT = env.get('ETHERSCAN_ENDPOINT').default('https://api-goerli.etherscan.io').asString()
-const ETHERSCAN_TOKEN = env.get('ETHERSCAN_TOKEN').default('').asString()
 const CHAIN_ID = env.get('CHAIN_ID').default(5).asInt()
 const BLOCKS_IN_FUTURE = env.get('BLOCKS_IN_FUTURE').default(1).asInt()
 const provider = new providers.InfuraProvider(CHAIN_ID, process.env.INFURA_TOKEN)
-const web3 = new Web3(new Web3.providers.HttpProvider(env.get('INFURA_HTTP_PROVIDER').default("https://goerli.infura.io/v3/b544d3ce1d5747ffbfa113d47f215725").asString()))
-
-// wallet keys
 const WALLET_PRIVATE_KEY = env.get("WALLET_PRIVATE_KEY").required().asString()
 
-let wallet: Wallet
-let logger: Logger
-
-function init() {
-    var logFileName = process.platform == "win32" ? `log_${new Date().toISOString()}.txt`.replaceAll(':', '.') : `log_${new Date().toISOString()}.txt`
-    var logFilepath = path.join(__dirname, "../", "logs", logFileName)
-
-    logger = new MultiLogger([new ConsoleLogger(), new FileLogger(logFilepath)])
-
-    if (WALLET_PRIVATE_KEY == undefined) {
-        logger.error("Private key wallet undefined. Exiting.")
-        process.exit(1)
-    }
-    wallet = new Wallet(WALLET_PRIVATE_KEY, provider)
-}
+let wallet: Wallet = new Wallet(WALLET_PRIVATE_KEY, provider)
+let logger: Logger= new MultiLogger([new ConsoleLogger(), new FileLogger(getLogFilePath('nftBot'))])
 
 function getTransaction(txdata: string, maxBaseFee: bigint): TransactionRequest {
     return {
@@ -66,9 +47,9 @@ async function getNFTMintData(nftAddress: string): Promise<string> {
         const iface = await getInterface(nftAddress)
 
         // Get signature parameter IF it does not get created server side
-        var ethersHashed = solidityKeccak256(["address", "uint256"], [wallet.address, NFT_PIECES_PER_MINT])
-        var web3sig = web3.eth.accounts.sign(ethersHashed, WALLET_PRIVATE_KEY)
-        params = [NFT_PIECES_PER_MINT, web3sig.signature]
+        // var ethersHashed = solidityKeccak256(["address", "uint256"], [wallet.address, NFT_PIECES_PER_MINT])
+        // var web3sig = web3.eth.accounts.sign(ethersHashed, WALLET_PRIVATE_KEY)
+        // params = [NFT_PIECES_PER_MINT, web3sig.signature]
 
         const data = iface.encodeFunctionData(functionName, params)
 
@@ -103,6 +84,7 @@ async function main() {
     }
 
     // ========== Mempool tx ==========
+    // const web3 = new Web3(new Web3.providers.HttpProvider(env.get('INFURA_HTTP_PROVIDER').default("https://goerli.infura.io/v3/b544d3ce1d5747ffbfa113d47f215725").asString()))
     // const Tx = require('ethereumjs-tx').Transaction;
     // const tx_object = {
     //     'chainId': CHAIN_ID,
@@ -122,5 +104,4 @@ async function main() {
     await sendFlasbhotTransaction(logger, bundledTransaction)
 }
 
-init();
 main();
