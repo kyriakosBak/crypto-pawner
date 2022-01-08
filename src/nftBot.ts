@@ -65,35 +65,15 @@ function getTransaction(txdata: string, maxBaseFee: BigNumber): TransactionReque
 async function getNFTMintData(nftAddress: string): Promise<string> {
     const url = ETHERSCAN_ENDPOINT + '/api?module=contract&action=getabi&address=' + nftAddress + '&apikey=' + ETHERSCAN_TOKEN
     try {
-        // const iface = await getInterface(nftAddress))
-        const iface = await getInterface('dinoBabies.json')
-        const contract = new Contract(NFT_ADDRESS, iface, wallet)
+        const iface = await getInterface(nftAddress)
+        // const iface = await getInterface('dinoBabies.json')
 
-        // Get signature parameter
-        var unpackedParameters = [["address", "uint256"], [env.get('WALLET_ADDRESS').required().asString(), NFT_PIECES_PER_MINT]]
-        var packedData = solidityPack(["address", "uint256"], unpackedParameters[1])
-
-        var ethersHashed = solidityKeccak256(["address", "uint256"], unpackedParameters[1])
-        ethersHashed = keccak256(packedData)
-        var ethersSig = await wallet.signMessage(ethersHashed)
-        
-        var web3sig = web3.eth.accounts.sign(packedData, WALLET_PRIVATE_KEY)
-
-        console.log(web3.eth.accounts.recover(packedData, web3sig.signature))
-
-        console.log(web3sig.signature == ethersSig)
-        // let msgPrefix = "\x19Ethereum Signed Message:\n32";
-        // var newHashed = Web3.utils.soliditySha3(msgPrefix, hashedValues) as string;
-        
-        //var sigNoArray = await wallet.signMessage(hashedValues)
-        // var signatureParameter = await wallet.signMessage(arrayify(hashedValues))
-        // var packedData = solidityPack(["address", "uint256"], [env.get('WALLET_ADDRESS').required().asString(), 2])
-        // var web3sig = web3.eth.accounts.sign(packedData, WALLET_PRIVATE_KEY)
-        // var verify = verifyMessage(hashedValues, signatureParameter)
-        // console.log(verify)
+        // Get signature parameter IF it does not get created server side
+        var ethersHashed = solidityKeccak256(["address", "uint256"], [wallet.address, NFT_PIECES_PER_MINT])
+        var web3sig = web3.eth.accounts.sign(ethersHashed, WALLET_PRIVATE_KEY)
 
         let params = [NFT_PIECES_PER_MINT, web3sig.signature]
-        const data =    iface.encodeFunctionData("mint", params)
+        const data = iface.encodeFunctionData("mint", params)
 
         return data
 
@@ -132,16 +112,17 @@ async function main() {
     // const tx_object = {
     //     'chainId': CHAIN_ID,
     //     'gas': 200000,
-    //     'gasPrice': web3.utils.toHex(web3.utils.toWei('3', 'gwei')),
+    //     'gasPrice': web3.utils.toHex(web3.utils.toWei('1', 'gwei')),
     //     'nonce': await wallet.getTransactionCount(),
     //     'data': await getNFTMintData(NFT_ADDRESS),
-    //     'to': NFT_ADDRESS
+    //     'to': NFT_ADDRESS,
+    //     'value': BigInt(0.1 * Math.pow(10,18)).toString()
     // };
 
-    // const signed_tx = await web3.eth.accounts.signTransaction(tx_object, env.get('WALLET_PRIVATE_KEY').required().asString())
+    // const signed_tx = await web3.eth.accounts.signTransaction(tx_object, wallet.privateKey)
     // const send = web3.eth.sendSignedTransaction(signed_tx['rawTransaction'] as string, (e,h) => {console.log(e); console.log(h)});
     // console.log(signed_tx)
-    await sendFlasbhotTransaction(logger, bundledTransaction)
+    // await sendFlasbhotTransaction(logger, bundledTransaction)
 }
 
 init();
