@@ -1,19 +1,14 @@
-import { defaultAbiCoder, Interface } from '@ethersproject/abi';
 import { TransactionRequest } from '@ethersproject/providers';
 import { FlashbotsBundleProvider, FlashbotsBundleRawTransaction, FlashbotsBundleResolution, FlashbotsBundleTransaction } from '@flashbots/ethers-provider-bundle';
 import dotenv from 'dotenv';
 import * as env from 'env-var'
-import { BigNumber, Contract, providers, utils, Wallet } from 'ethers';
-import { arrayify, hexlify, id, keccak256, parseEther, solidityKeccak256, solidityPack, verifyMessage } from 'ethers/lib/utils';
+import { BigNumber, providers, Wallet } from 'ethers';
+import { solidityKeccak256 } from 'ethers/lib/utils';
 import path from 'path';
-import { exit } from 'process';
 import { ConsoleLogger, FileLogger, Logger, MultiLogger } from './logger';
-import * as fs from "fs"
-import { ETH, getContractABIJson, getInterface, padLeft } from './utils';
+import { getInterface } from './utils';
 import Web3 from 'web3';
 import { sendFlasbhotTransaction } from './flasbhotSender';
-
-const GWEI = BigNumber.from(10).pow(9)
 
 dotenv.config()
 const NFT_PRICE_ETH = env.get('NFT_PRICE_ETH').required().asFloat()
@@ -49,38 +44,39 @@ function init() {
     wallet = new Wallet(WALLET_PRIVATE_KEY, provider)
 }
 
-function getTransaction(txdata: string, maxBaseFee: BigNumber): TransactionRequest {
+function getTransaction(txdata: string, maxBaseFee: bigint): TransactionRequest {
     return {
         chainId: CHAIN_ID,
         type: 2,
         value: BigInt(NFT_PIECES_PER_MINT * NFT_PRICE_ETH * Math.pow(10, 18)),
         gasLimit: 400000,
         data: txdata,
-        maxFeePerGas: BigInt(2000 * Math.pow(10, 9)),// maxBaseFee.add(MINER_BRIBE_GWEI),
+        maxFeePerGas: maxBaseFee + BigInt(MINER_BRIBE_GWEI * Math.pow(10, 9)),
         maxPriorityFeePerGas: MINER_BRIBE_GWEI, // max priority fee == bribe
         to: NFT_ADDRESS,
     }
 }
 
 async function getNFTMintData(nftAddress: string): Promise<string> {
-    const url = ETHERSCAN_ENDPOINT + '/api?module=contract&action=getabi&address=' + nftAddress + '&apikey=' + ETHERSCAN_TOKEN
+
+    let functionName = "mint"
+    let params : any[] = [NFT_PIECES_PER_MINT]
+
     try {
         const iface = await getInterface(nftAddress)
-        // const iface = await getInterface('dinoBabies.json')
 
         // Get signature parameter IF it does not get created server side
         var ethersHashed = solidityKeccak256(["address", "uint256"], [wallet.address, NFT_PIECES_PER_MINT])
         var web3sig = web3.eth.accounts.sign(ethersHashed, WALLET_PRIVATE_KEY)
+        params = [NFT_PIECES_PER_MINT, web3sig.signature]
 
-        let params = [NFT_PIECES_PER_MINT, web3sig.signature]
-        const data = iface.encodeFunctionData("mint", params)
+        const data = iface.encodeFunctionData(functionName, params)
 
         return data
-
     } catch (exception) {
         logger.error(JSON.stringify(exception))
     }
-    logger.info("Could not find mint function.")
+    logger.info(`Could not find ${functionName} function.`)
     return ""
 }
 
@@ -97,7 +93,7 @@ async function main() {
     let bundledTransaction: (FlashbotsBundleTransaction | FlashbotsBundleRawTransaction)[] = []
     const contractsToMint = Number(NFT_PIECES_TOTAL) / Number(NFT_PIECES_PER_MINT)
     for (let index = 0; index < contractsToMint; index++) {
-        var generatedTransaction = getTransaction(transactionMintData, maxBaseFeeInFutureBlock)
+        var generatedTransaction = getTransaction(transactionMintData, BigInt(maxBaseFeeInFutureBlock.toString()))
         bundledTransaction.push(
             {
                 transaction: generatedTransaction,
@@ -106,9 +102,8 @@ async function main() {
         )
     }
 
-
-    const Tx = require('ethereumjs-tx').Transaction;
-
+    // ========== Mempool tx ==========
+    // const Tx = require('ethereumjs-tx').Transaction;
     // const tx_object = {
     //     'chainId': CHAIN_ID,
     //     'gas': 200000,
@@ -122,7 +117,9 @@ async function main() {
     // const signed_tx = await web3.eth.accounts.signTransaction(tx_object, wallet.privateKey)
     // const send = web3.eth.sendSignedTransaction(signed_tx['rawTransaction'] as string, (e,h) => {console.log(e); console.log(h)});
     // console.log(signed_tx)
-    // await sendFlasbhotTransaction(logger, bundledTransaction)
+
+    // ========== Flasbhot tx ==========
+    await sendFlasbhotTransaction(logger, bundledTransaction)
 }
 
 init();

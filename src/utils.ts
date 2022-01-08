@@ -23,6 +23,13 @@ export function padRight(str: string | number, totalDigits: number, char: string
     return paddedString
 }
 
+export function getLogFilePath(filename: string)
+{
+    var logFileName = process.platform == "win32" ? `${filename}_${new Date().toISOString()}.txt`.replaceAll(':', '.') : `${filename}_${new Date().toISOString()}.txt`
+    var logFilepath = path.join(__dirname, "../", "logs", logFileName)
+    return logFilepath
+}
+
 export async function getContractABIJson(networkEndpoint: string, contractAddress: string, apikey: string): Promise<any> {
     const url = networkEndpoint + '/api?module=contract&action=getabi&address=' + contractAddress + '&apikey=' + apikey
     try {
