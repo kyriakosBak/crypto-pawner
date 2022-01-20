@@ -68,7 +68,7 @@ export class FileLogger implements Logger {
     }
 
     private writeToFile(msg: string): void {
-        fs.writeFileSync(this.filePath, msg, { flag: 'a+' })
+        fs.writeFileSync(this.filePath, msg + '\n', { flag: 'a+' })
     }
 }
 
