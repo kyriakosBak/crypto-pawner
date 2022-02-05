@@ -2,12 +2,13 @@ import { TransactionRequest } from '@ethersproject/providers';
 import { FlashbotsBundleProvider, FlashbotsBundleRawTransaction, FlashbotsBundleTransaction } from '@flashbots/ethers-provider-bundle';
 import dotenv from 'dotenv';
 import * as env from 'env-var'
-import { BigNumber, providers, Wallet } from 'ethers';
-import { solidityKeccak256 } from 'ethers/lib/utils';
+import { BigNumber, BigNumberish, Contract, ethers, providers, Transaction, Wallet } from 'ethers';
 import { ConsoleLogger, FileLogger, Logger, MultiLogger } from './logger';
-import { getInterface, getLogFilePath } from './utils';
+import { getContractABIJson, getEpochTimestamp, getInterface, getLogFilePath, getMaxBaseFeeInFutureBlock, GetWalletsKeys as GetWalletKeys } from './utils';
 import Web3 from 'web3';
+import { AbiItem } from 'web3-utils'
 import { sendFlasbhotTransaction } from './flasbhotSender';
+import { threadId } from 'worker_threads';
 
 dotenv.config()
 
@@ -19,20 +20,18 @@ const NFT_ADDRESS = env.get('NFT_ADDRESS').required().asString()
 const MINT_DATA = env.get('MINT_DATA').asString()
 const CHAIN_ID = env.get('CHAIN_ID').default(5).asInt()
 const BLOCKS_IN_FUTURE = env.get('BLOCKS_IN_FUTURE').default(1).asInt()
-const provider = new providers.InfuraProvider(CHAIN_ID, process.env.INFURA_TOKEN)
-const WALLET_PRIVATE_KEY = env.get("WALLET_PRIVATE_KEY").required().asString()
-
-let wallet: Wallet = new Wallet(WALLET_PRIVATE_KEY, provider)
-let logger: Logger= new MultiLogger([new ConsoleLogger(), new FileLogger(getLogFilePath('nftBot'))])
+const provider = new providers.InfuraWebSocketProvider(CHAIN_ID, process.env.INFURA_TOKEN)
+// const provider = new providers.WebSocketProvider("ws://127.0.0.1:8546", CHAIN_ID)
+let logger: Logger = new MultiLogger([new ConsoleLogger(), new FileLogger(getLogFilePath('nftBot'))])
 
 function getTransaction(txdata: string, maxBaseFee: bigint): TransactionRequest {
     return {
         chainId: CHAIN_ID,
         type: 2,
         value: BigInt(NFT_PIECES_PER_MINT * NFT_PRICE_ETH * Math.pow(10, 18)),
-        gasLimit: 400000,
+        gasLimit: 2000000,
         data: txdata,
-        maxFeePerGas: maxBaseFee + BigInt(MINER_BRIBE_GWEI * Math.pow(10, 9)),
+        // maxFeePerGas: BigInt(200 * Math.pow(10, 9)) + BigInt(MINER_BRIBE_GWEI * Math.pow(10, 9)),
         maxPriorityFeePerGas: MINER_BRIBE_GWEI, // max priority fee == bribe
         to: NFT_ADDRESS,
     }
@@ -40,8 +39,8 @@ function getTransaction(txdata: string, maxBaseFee: bigint): TransactionRequest 
 
 async function getNFTMintData(nftAddress: string): Promise<string> {
 
-    let functionName = "mint"
-    let params : any[] = [NFT_PIECES_PER_MINT]
+    let functionName = "publicSalesMint"
+    let params: any[] = [NFT_PIECES_PER_MINT]
 
     try {
         const iface = await getInterface(nftAddress)
@@ -61,29 +60,101 @@ async function getNFTMintData(nftAddress: string): Promise<string> {
     return ""
 }
 
-async function main() {
-    // Start Flashbots provider and get mint function data
+async function sendMempoolTX() {
+    // ========== Mempool tx ==========
+    var hrstart = process.hrtime()
+
+    // Get mint data
     const transactionMintData = MINT_DATA ? MINT_DATA : await getNFTMintData(NFT_ADDRESS)
-    if (transactionMintData === '') { return }
+    if (transactionMintData === '') { logger.error("Transaction mint data is empty."); return; };
 
-    const blockNumber = await provider.getBlockNumber()
-    const block = await provider.getBlock(blockNumber)
-    const maxBaseFeeInFutureBlock = FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(BigNumber.from(block.baseFeePerGas), BLOCKS_IN_FUTURE)
+    var transactions: TransactionRequest[] = []
+    let transactionExecutions: { (): Promise<ethers.providers.TransactionResponse> }[] = [];
+    var walletKeys = GetWalletKeys(env.get("WALLETS_TO_USE").required().asInt())
+    let maxBaseFee = getMaxBaseFeeInFutureBlock(provider)
 
-    // Define multiple contracts or just a big one
-    let bundledTransaction: (FlashbotsBundleTransaction | FlashbotsBundleRawTransaction)[] = []
-    const contractsToMint = Number(NFT_PIECES_TOTAL) / Number(NFT_PIECES_PER_MINT)
-    for (let index = 0; index < contractsToMint; index++) {
-        var generatedTransaction = getTransaction(transactionMintData, BigInt(maxBaseFeeInFutureBlock.toString()))
-        bundledTransaction.push(
-            {
-                transaction: generatedTransaction,
-                signer: wallet
-            }
-        )
+    for (let i = 0; i < env.get("WALLETS_TO_USE").required().asInt(); i++) {
+
+        // Create wallet
+        let wallet = new Wallet(walletKeys[i], provider)
+
+        // Create transaction
+        let tx = getTransaction(transactionMintData, 2000n * BigInt(1 * Math.pow(10, 9))) // Temporarily set high base fee
+        tx.nonce = await provider.getTransactionCount(wallet.address, "latest")
+        tx.maxFeePerGas = (await maxBaseFee).add(tx.maxPriorityFeePerGas as BigNumberish).add("1000000000")
+
+        // Add transaction to list
+        transactions.push(tx)
+
+        // Add transaction execution to list
+        // transactionExecutions.push(() =>
+        //     wallet.sendTransaction(tx)
+        // )
+
+        // send transaction
+        wallet.sendTransaction(tx).then((txObj) => {
+            logger.info('txHash: ' + txObj.hash)
+        })
     }
 
-    // ========== Mempool tx ==========
+    // transactionExecutions[0].call(null).then((txObj) => {
+    //     logger.info('txHash: ' + txObj.hash)
+    // })
+
+    let hrend = process.hrtime(hrstart)
+    console.info('Execution time (hr): %ds %dms', hrend[0], hrend[1] / 1000000)
+}
+
+async function main() {
+
+    // const transactionMintData = MINT_DATA ? MINT_DATA : await getNFTMintData(NFT_ADDRESS)
+    // if (transactionMintData === '') { logger.error("Transaction mint data is empty.") };
+
+    // Chech every X ms if we are within block
+    let interval = 200
+    let intervalId = setInterval(() => {
+        if (getEpochTimestamp() > env.get("MINT_TIMESTAMP").required().asInt()) {
+            clearInterval(intervalId)
+            sendMempoolTX()
+        }
+        else
+            console.log("not there yet")
+    }, interval)
+
+
+    // ========== Flasbhot tx ==========
+    // // Define multiple contracts or just a big one
+    // const blockNumber = await provider.getBlockNumber()
+    // const block = await provider.getBlock(blockNumber)
+    // const maxBaseFeeInFutureBlock = FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(BigNumber.from(block.baseFeePerGas), BLOCKS_IN_FUTURE)
+    // let bundledTransaction: (FlashbotsBundleTransaction | FlashbotsBundleRawTransaction)[] = []
+    // const contractsToMint = Number(NFT_PIECES_TOTAL) / Number(NFT_PIECES_PER_MINT)
+    // for (let index = 0; index < contractsToMint; index++) {
+    //     var generatedTransaction = getTransaction(transactionMintData, BigInt(maxBaseFeeInFutureBlock.toString()))
+    //     bundledTransaction.push(
+    //         {
+    //             transaction: generatedTransaction,
+    //             signer: wallet
+    //         }
+    //     )
+    //     bundledTransaction.push(
+    //         {
+    //             transaction: generatedTransaction,
+    //             signer: wallet2
+    //         }
+    //     )
+    // }
+    // await sendFlasbhotTransaction(logger, bundledTransaction)
+    // =================================
+
+    // const web3 = new Web3(new Web3.providers.HttpProvider(env.get('INFURA_HTTP_PROVIDER').default("https://goerli.infura.io/v3/b544d3ce1d5747ffbfa113d47f215725").asString()))
+
+
+
+
+
+
+
     // const web3 = new Web3(new Web3.providers.HttpProvider(env.get('INFURA_HTTP_PROVIDER').default("https://goerli.infura.io/v3/b544d3ce1d5747ffbfa113d47f215725").asString()))
     // const Tx = require('ethereumjs-tx').Transaction;
     // const tx_object = {
@@ -100,8 +171,7 @@ async function main() {
     // const send = web3.eth.sendSignedTransaction(signed_tx['rawTransaction'] as string, (e,h) => {console.log(e); console.log(h)});
     // console.log(signed_tx)
 
-    // ========== Flasbhot tx ==========
-    await sendFlasbhotTransaction(logger, bundledTransaction)
+
 }
 
 main();

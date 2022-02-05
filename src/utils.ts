@@ -4,6 +4,9 @@ import * as fs from "fs"
 import path from "path";
 import dotenv from 'dotenv';
 import * as env from 'env-var'
+import { Wallet } from "@ethersproject/wallet";
+import { JsonRpcProvider } from '@ethersproject/providers'
+import { BigNumber } from "@ethersproject/bignumber";
 dotenv.config()
 
 export const ETH = 10n ** 18n
@@ -19,12 +22,11 @@ export function padLeft(str: string | number, totalDigits: number, char: string 
 export function padRight(str: string | number, totalDigits: number, char: string = '0') {
     var paddedString = String(str)
     while (paddedString.length < totalDigits)
-        paddedString =  paddedString + char;
+        paddedString = paddedString + char;
     return paddedString
 }
 
-export function getLogFilePath(filename: string)
-{
+export function getLogFilePath(filename: string) {
     var logFileName = process.platform == "win32" ? `${filename}_${new Date().toISOString()}.txt`.replaceAll(':', '.') : `${filename}_${new Date().toISOString()}.txt`
     var logFilepath = path.join(__dirname, "../", "logs", logFileName)
     return logFilepath
@@ -61,17 +63,38 @@ export function getFunctionABIByName(jsonAbi: any, functionName: string, isPayab
     return ""
 }
 
-export async function getInterface(abiFileNameOrAddress:string): Promise<Interface> {
+export async function getInterface(abiFileNameOrAddress: string): Promise<Interface> {
     let jsonAbi: string
     // If address
-    if (abiFileNameOrAddress.startsWith('0x')){
+    if (abiFileNameOrAddress.startsWith('0x')) {
         const endPoint = env.get('ETHERSCAN_ENDPOINT').required().asString()
         const token = env.get('ETHERSCAN_TOKEN').required().asString()
         jsonAbi = await getContractABIJson(endPoint, abiFileNameOrAddress, token)
     }
-    else{
+    else {
         const jsonAbiPath = path.join(__dirname, "../", "contracts", "abis", abiFileNameOrAddress)
         jsonAbi = JSON.parse(fs.readFileSync(jsonAbiPath).toString())
     }
     return new Interface(jsonAbi)
+}
+
+export function GetWalletsKeys(numberOfWallet: number): string[] {
+    let wallets: string[] = []
+    for (let i = 1; i < numberOfWallet + 1; i++) {
+        wallets.push(env.get(`WALLET_${i}`).required().asString())
+    }
+    return wallets
+}
+
+export async function getMaxBaseFeeInFutureBlock(provider:JsonRpcProvider, blocksInFuture:number = 1) : Promise<BigNumber>
+{
+    let currentFee = await provider.getGasPrice()
+    for (let i = 0; i < blocksInFuture; i++) {
+        currentFee =  currentFee.mul(1125).div(1000)
+    }
+    return currentFee
+}
+
+export function getEpochTimestamp() : number {
+    return Math.floor(Date.now() / 1000)
 }
